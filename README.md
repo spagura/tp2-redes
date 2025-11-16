@@ -16,5 +16,8 @@ mininet> sh ovs-vsctl set-fail-mode s5 standalone
 
 pingall en este momento funciona
 
+para ver en wireshark los pings, se filtra con
+ --- icmp ---
+
 no hay firewall
 no hay controlador

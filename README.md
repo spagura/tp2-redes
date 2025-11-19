@@ -45,11 +45,13 @@ sudo mn --custom topologia.py --topo customTopo,switches=N --controller=remote -
 
 Para usar POX con el firewall custom, usar el comando:
 
-```python pox.py  firewall l2_learning
+```
+python pox.py  firewall l2_learning
 ```
 
 En el firewall custom se puede indicar con el parametro --dpids los switches a los que se les aplica el firewall, por ejemplo:
 
-```python pox.py  firewall --dpids=1 l2_learning
+```
+python pox.py  firewall --dpids=1 l2_learning
 ```
 Aplica el firewall solo al switch 1, si no se indica el parametro se aplica a todos los switches de la topologia.

@@ -19,5 +19,28 @@ pingall en este momento funciona
 para ver en wireshark los pings, se filtra con
  --- icmp ---
 
+Para usar pox con la logica de learning switch usar el comando:
+
+```
+python pox.py l2_learning.py
+```
+Si queremos especificar el nivel de logging usar:
+
+```
+python pox.py log.level --DEBUG l2_learning.py (o INFO, WARNING, ERROR)
+```
+
+Por defecto pox escucha a todas las ips en el puerto 6633.
+Se puede especificar otra ip o puerto de la siguiente manera
+
+```
+python pox.py openflow.of_01 --port=<puerto> --address=<ip>  l2_learning.py
+```
+
+Para levantar mininet con n switches y pox como controlador en una terminal 
+```
+sudo mn --custom topologia.py --topo customTopo,switches=N --controller=remote --switch=ovsk
+```
+
+
 no hay firewall
-no hay controlador

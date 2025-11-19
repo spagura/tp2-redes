@@ -1,0 +1,6 @@
+[
+  {
+    "action": "deny",
+    "dst_port": 80
+  }
+]

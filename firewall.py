@@ -75,7 +75,8 @@ def install_rules_on_connection(connection, rules):
         # Construye un objeto match para definir la regla
         match = of.ofp_match()
         # Forzamos IPv4 si hay campos IP/puerto
-        match.dl_type = 0x0800
+        if any([rule_dst_port, rule_src_port, rule_src_ip, rule_dst_ip, rule_protocol]):
+            match.dl_type = 0x0800  # IPv4
 
         if rule_protocol is not None:
             rp = rule_protocol.lower()
@@ -92,6 +93,7 @@ def install_rules_on_connection(connection, rules):
         #agrego a la regla el puerto destino si esta definio
         if rule_dst_port is not None:
             try:
+                log.info("Agregando regla de puerto destino: %d", int(rule_dst_port))
                 match.tp_dst = int(rule_dst_port)
             except Exception:
                 log.warning('dst_port invalido en regla: %s', rule)
@@ -121,6 +123,7 @@ def install_rules_on_connection(connection, rules):
         msg.match = match
         # Prioridad razonable para reglas de firewall
         msg.priority = int(rule_priority)
+        msg.actions = []  # Sin acciones = drop
         connection.send(msg)
         log.info('Instalada %s  en switch: %s', rule_msg, dpid_to_str(connection.dpid))
 

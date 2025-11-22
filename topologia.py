@@ -15,7 +15,10 @@ class MyTopo(Topo):
 
         # Create hosts
         for i in range(1, NUM_HOST_SIDE + 1):
-            self.addHost(f'h{i}')
+            if i == 1:
+                self.addHost(f'h{i}', ip='10.0.0.1/24')
+            else:
+                self.addHost(f'h{i}')
 
         prev_switch = None
 

@@ -1,6 +1,14 @@
 [
   {
     "action": "deny",
-    "dst_port": 80
+    "dst_port": 80,
+    "priority": 1500
+  },
+  {
+    "action": "deny",
+    "src_ip": "10.0.0.1",
+    "dst_port": 5001,
+    "protocol": "udp",
+    "priority":  1000
   }
 ]

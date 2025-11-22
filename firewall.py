@@ -1,4 +1,4 @@
-#mover el archivo a la carpeta pox/ext
+# mover el archivo a la carpeta pox/ext
 
 
 from pox.core import core
@@ -9,6 +9,7 @@ from pox.lib.packet.tcp import tcp
 from pox.lib.packet.udp import udp
 from pox.lib.packet.icmp import icmp
 from pox.lib.util import dpid_to_str
+from pox.lib.addresses import IPAddr
 import json
 import os
 
@@ -18,12 +19,120 @@ log = core.getLogger()
 RULES_FILE = os.path.join(os.path.dirname(__file__), "reglas_fw.json")
 
 
+def format_rule(action, rule_dst_ip, rule_dst_port, rule_protocol,
+                rule_src_ip, rule_src_port, rule_priority):
+    rule_msg = " regla: "
+    if action is not None:
+        rule_msg += f"action={action} "
+    if rule_src_ip is not None:
+        rule_msg += f"src_ip={rule_src_ip} "
+    if rule_src_port is not None:
+        rule_msg += f"src_port={rule_src_port} "
+    if rule_dst_ip is not None:
+        rule_msg += f"dst_ip={rule_dst_ip} "
+    if rule_dst_port is not None:
+        rule_msg += f"dst_port={rule_dst_port} "
+    if rule_protocol is not None:
+        rule_msg += f"protocol={rule_protocol} "
+    if rule_priority is not None:
+        rule_msg += f"priority={rule_priority} "
+    return rule_msg
+
+# Cargar reglas desde archivo (una sola vez al iniciar el controlador)
+def load_rules_from_file():
+    try:
+        with open(RULES_FILE) as f:
+            rules = json.load(f)
+        log.info("Se cargaron %d reglas desde %s", len(rules), RULES_FILE)
+        return rules
+    except Exception as e:
+        log.error("Error al cargar reglas desde %s: %s", RULES_FILE, e)
+        return []
+
+
+# Construye y instala en el switch flows de drop a partir de cada regla
+def install_rules_on_connection(connection, rules):
+    for rule in rules:
+        action = rule.get("action")
+        rule_src_ip = rule.get("src_ip")
+        rule_src_port = rule.get("src_port")
+        rule_dst_ip = rule.get("dst_ip")
+        rule_dst_port = rule.get("dst_port")
+        rule_protocol = rule.get("protocol").lower() if rule.get("protocol") is not None else None
+        rule_priority = rule.get("priority")
+
+        if rule_priority is None:
+            log.error("La regla no tiene prioridad definida: %s", rule)
+            continue
+
+        rule_msg = format_rule(action, rule_dst_ip, rule_dst_port, rule_protocol, rule_src_ip,
+                                     rule_src_port, rule_priority)
+        log.info("Configurando %s", rule_msg)
+        if action != 'deny':
+            log.info("Action no soportada: %s", action)
+            continue
+
+        # Construye un objeto match para definir la regla
+        match = of.ofp_match()
+        # Forzamos IPv4 si hay campos IP/puerto
+        match.dl_type = 0x0800
+
+        if rule_protocol is not None:
+            rp = rule_protocol.lower()
+            if rp == 'tcp':
+                match.nw_proto = 6
+            elif rp == 'udp':
+                match.nw_proto = 17
+            elif rp == 'icmp':
+                match.nw_proto = 1
+            else:
+                log.warning("Protocolo no soportado %s", rule_protocol)
+                continue
+
+        #agrego a la regla el puerto destino si esta definio
+        if rule_dst_port is not None:
+            try:
+                match.tp_dst = int(rule_dst_port)
+            except Exception:
+                log.warning('dst_port invalido en regla: %s', rule)
+
+        #agrego a la regla el puerto origen si esta definido
+        if rule_src_port is not None:
+            try:
+                match.tp_src = int(rule_src_port)
+            except Exception:
+                log.warning('src_port invalido en regla: %s', rule)
+
+        #agrego a la regla la ip origen si esta definida
+        if rule_src_ip is not None:
+            try:
+                match.nw_src = IPAddr(rule_src_ip)
+            except Exception:
+                log.warning('src_ip invalida en regla: %s', rule)
+
+        #agrego a la regla la ip destino si esta definida
+        if rule_dst_ip is not None:
+            try:
+                match.nw_dst = IPAddr(rule_dst_ip)
+            except Exception:
+                log.warning('dst_ip invalida en regla: %s', rule)
+
+        msg = of.ofp_flow_mod()
+        msg.match = match
+        # Prioridad razonable para reglas de firewall
+        msg.priority = int(rule_priority)
+        connection.send(msg)
+        log.info('Instalada %s  en switch: %s', rule_msg, dpid_to_str(connection.dpid))
+
+
 class Firewall(object):
     def __init__(self, connection):
         self.connection = connection
         connection.addListeners(self)
-        self.rules = []
-        self._load_rules()
+        # Usar las reglas cargadas globalmente (core.firewall_rules) si existen
+        self.rules = getattr(core, 'firewall_rules', [])
+
+
 
     def _load_rules(self):
         switch_id = dpid_to_str(self.connection.dpid)
@@ -38,103 +147,46 @@ class Firewall(object):
                       switch_id, RULES_FILE, e)
             self.rules = []
 
-    def _match_rules(self, packet, in_port):
-
-        ip = packet.payload
-        packet_protocol = ip.payload
-
-        if not isinstance(ip, ipv4):
-            log.debug(" No es un paquete IPv4, no se aplican reglas")
-            return None
-
-        # Log detallado: IP origen:puerto -> IP destino:puerto y protocolo
-        try:
-            src_ip = getattr(ip, "srcip", None)
-            dst_ip = getattr(ip, "dstip", None)
-            src_port = getattr(packet_protocol, "srcport", None) if packet_protocol is not None else None
-            dst_port = getattr(packet_protocol, "dstport", None) if packet_protocol is not None else None
-
-            if isinstance(packet_protocol, tcp):
-                proto = "TCP"
-            elif isinstance(packet_protocol, udp):
-                proto = "UDP"
-            elif isinstance(packet_protocol, icmp):
-                proto = "ICMP"
-            else:
-                proto = type(packet_protocol).__name__ if packet_protocol is not None else None
-
-            log.info("PKT -- switch=%s src=%s:%s dst=%s:%s proto=%s",
-                     dpid_to_str(self.connection.dpid),
-                     src_ip, src_port,
-                     dst_ip, dst_port,
-                     proto)
-        except Exception:
-            log.error("Error al recuperar campos del paquete para el log", exc_info=True)
-
-        for rule in self.rules:
-            action = rule.get("action")
-            dst_port = rule.get("dst_port")
-
-            log.info(" Evaluando regla: action=%s dst_port=%s", action, dst_port)
-
-            #protocol = rule.get("protocol")
-            #src_port = rule.get("src_port")
-
-            # si quiero filtrar por protocolo
-            # if protocol is not None:
-            #     protocol = protocol.lower()
-            #     if protocol == "tcp" and not isinstance(packet_protocol, tcp):
-            #         continue
-            #     if protocol == "udp" and not isinstance(packet_protocol, udp):
-            #         continue
-            #     if protocol == "icmp" and not isinstance(packet_protocol, icmp):
-            #        continue
-
-
-
-            # filtro por puerto destino
-            if dst_port is not None:
-                if not hasattr(packet_protocol, "dstport"):
-                    continue
-                try:
-                    if int(packet_protocol.dstport) != int(dst_port):
-                        continue
-                except Exception:
-                    log.error(" Error al comparar puerto destino en la regla")
-                    continue
-
-            # para filtrar por puerto origen
-            # if src_port is not None:
-            #     if not hasattr(packet_protocol, "srcport"):
-            #         continue
-            #     try:
-            #         if int(packet_protocol.srcport) != int(src_port):
-            #             continue
-            #     except Exception:
-            #         continue
-
-            return action
-        log.info(" No se encontro ninguna regla que coincida en switch %s",self.connection.dpid)
-        return None
-
-    def _handle_PacketIn(self, event):
-        packet = event.parsed
-        in_port = event.port
-
-        action = self._match_rules(packet, in_port)
-        #log.info(" Accion determinada por las reglas: %s", action)
-        if action == "deny":
-            # Descarta e instala flow de drop
-            log.info(" DROP paquete con dst_port=80 en switch %s",
-                      event.connection.dpid)
-
-            msg = of.ofp_flow_mod()
-            msg.match = of.ofp_match.from_packet(packet, in_port)
-            msg.buffer_id = event.ofp.buffer_id
-            # No se agregan acciones, por lo que el paquete se descarta
-            self.connection.send(msg)
-            return
-
+    # def _handle_PacketIn(self, event):
+    #     packet = event.parsed
+    #     in_port = event.port
+    #     #Si el mensaje no es bloqueado por el firewall se envia a destino
+    #     try:
+    #         eth = packet
+    #         ip = eth.payload if isinstance(eth.payload, ipv4) else None
+    #         l4 = ip.payload if ip is not None else None
+    #
+    #         src_ip = str(getattr(ip, 'srcip', None)) if ip is not None else None
+    #         dst_ip = str(getattr(ip, 'dstip', None)) if ip is not None else None
+    #         src_port = getattr(l4, 'srcport', None) if l4 is not None else None
+    #         dst_port = getattr(l4, 'dstport', None) if l4 is not None else None
+    #
+    #         if isinstance(l4, tcp):
+    #             proto_name = 'TCP'
+    #         elif isinstance(l4, udp):
+    #             proto_name = 'UDP'
+    #         elif isinstance(l4, icmp):
+    #
+    #             proto_name = type(l4).__name__ if l4 is not None else None
+    #     except Exception:
+    #         src_ip = dst_ip = src_port = dst_port = proto_name = None
+    #
+    #     log.debug("NO se bloquea el paquete en switch=%s src=%s:%s dst=%s:%s proto=%s",
+    #              dpid_to_str(event.connection.dpid), src_ip, src_port, dst_ip, dst_port, proto_name)
+    #
+    #     # Reenviar el paquete sin instalar flows; usar OFPP_NORMAL para que el switch realice el forwarding unicast
+    #     pkt_out = of.ofp_packet_out()
+    #     buffer_id = getattr(event.ofp, 'buffer_id', None)
+    #     if buffer_id is not None and buffer_id != -1:
+    #         pkt_out.buffer_id = buffer_id
+    #     else:
+    #         pkt_out.data = event.ofp.data
+    #
+    #     pkt_out.in_port = in_port
+    #     # Salida por OFPP_NORMAL permite al switch decidir el puerto de salida (procesamiento normal)
+    #     pkt_out.actions.append(of.ofp_action_output(port=of.OFPP_NORMAL))
+    #     self.connection.send(pkt_out)
+    #     return
 
 def launch(dpids=""):
     # dpids: lista separada por comas de los dpids donde se activa el firewall
@@ -143,14 +195,20 @@ def launch(dpids=""):
         log.info(" Iniciando firewall custom en switchs con dpids = %s", dpids)
         allowed = set(int(d) for d in dpids.split(","))
     else:
-        log.info(" Iniciando firewall custom en todos los switchs")
+        log.info(" Iniciando firewall custom en TODOS los switchs")
         allowed = None
+
+    # Cargar reglas UNA VEZ y almacenarlas en core.firewall_rules
+    core.firewall_rules = load_rules_from_file()
 
     def start_switch(event):
         dpid = event.connection.dpid
         if allowed is None or dpid in allowed:
             log.info("Firewall ACTIVADO en switch %s", dpid)
             Firewall(event.connection)
+            # Instalar reglas proactivas en el switch en cuanto se conecte
+            if hasattr(core, 'firewall_rules'):
+                install_rules_on_connection(event.connection, core.firewall_rules)
         else:
             log.info("Firewall DESACTIVADO en switch %s", dpid)
 

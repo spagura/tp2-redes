@@ -2,8 +2,6 @@
 
 Comandos
 
-PARA CORRER LOS BASH, TIENEN QUE CAMBIAR LOS PATHS, DESPUES LO VOY A DEJAR MAS PROLIJO
-
 Para crear el mininet con N switches
 
 sudo mn --custom topologia.py --topo customTopo,switches=N --controller=none --switch=ovsk

@@ -1,5 +1,9 @@
 # tp2-redes
 
+# Repositorio git
+
+https://github.com/spagura/tp2-redes
+
 # INDICE
 
 - [Como correr los scripts](#como-correr-los-scripts)
@@ -37,7 +41,7 @@ Abrí una terminal en la carpeta scripts y escribí:
 bash firewall.sh
 ```
 
-## Explicaicon de cada script:
+## Explicacion de cada script:
 
 ### normal_case.sh
 

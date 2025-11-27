@@ -128,69 +128,6 @@ def install_rules_on_connection(connection, rules):
         log.info('Instalada %s  en switch: %s', rule_msg, dpid_to_str(connection.dpid))
 
 
-class Firewall(object):
-    def __init__(self, connection):
-        self.connection = connection
-        connection.addListeners(self)
-        # Usar las reglas cargadas globalmente (core.firewall_rules) si existen
-        self.rules = getattr(core, 'firewall_rules', [])
-
-
-
-    def _load_rules(self):
-        switch_id = dpid_to_str(self.connection.dpid)
-        try:
-            file = open(RULES_FILE)
-            self.rules = json.load(file)
-            file.close()
-            log.info(" se cargan %d reglas del archivo %s en el switch %s",
-                     len(self.rules), RULES_FILE, switch_id)
-        except Exception as e:
-            log.error(" Error al cargar reglas para el firewall en el switch %s desde el archivo %s: %s ",
-                      switch_id, RULES_FILE, e)
-            self.rules = []
-
-    # def _handle_PacketIn(self, event):
-    #     packet = event.parsed
-    #     in_port = event.port
-    #     #Si el mensaje no es bloqueado por el firewall se envia a destino
-    #     try:
-    #         eth = packet
-    #         ip = eth.payload if isinstance(eth.payload, ipv4) else None
-    #         l4 = ip.payload if ip is not None else None
-    #
-    #         src_ip = str(getattr(ip, 'srcip', None)) if ip is not None else None
-    #         dst_ip = str(getattr(ip, 'dstip', None)) if ip is not None else None
-    #         src_port = getattr(l4, 'srcport', None) if l4 is not None else None
-    #         dst_port = getattr(l4, 'dstport', None) if l4 is not None else None
-    #
-    #         if isinstance(l4, tcp):
-    #             proto_name = 'TCP'
-    #         elif isinstance(l4, udp):
-    #             proto_name = 'UDP'
-    #         elif isinstance(l4, icmp):
-    #
-    #             proto_name = type(l4).__name__ if l4 is not None else None
-    #     except Exception:
-    #         src_ip = dst_ip = src_port = dst_port = proto_name = None
-    #
-    #     log.debug("NO se bloquea el paquete en switch=%s src=%s:%s dst=%s:%s proto=%s",
-    #              dpid_to_str(event.connection.dpid), src_ip, src_port, dst_ip, dst_port, proto_name)
-    #
-    #     # Reenviar el paquete sin instalar flows; usar OFPP_NORMAL para que el switch realice el forwarding unicast
-    #     pkt_out = of.ofp_packet_out()
-    #     buffer_id = getattr(event.ofp, 'buffer_id', None)
-    #     if buffer_id is not None and buffer_id != -1:
-    #         pkt_out.buffer_id = buffer_id
-    #     else:
-    #         pkt_out.data = event.ofp.data
-    #
-    #     pkt_out.in_port = in_port
-    #     # Salida por OFPP_NORMAL permite al switch decidir el puerto de salida (procesamiento normal)
-    #     pkt_out.actions.append(of.ofp_action_output(port=of.OFPP_NORMAL))
-    #     self.connection.send(pkt_out)
-    #     return
-
 def launch(dpids=""):
     # dpids: lista separada por comas de los dpids donde se activa el firewall
     # si no se indica nada se activa el firewall en todos  los switchs
@@ -208,7 +145,7 @@ def launch(dpids=""):
         dpid = event.connection.dpid
         if allowed is None or dpid in allowed:
             log.info("Firewall ACTIVADO en switch %s", dpid)
-            Firewall(event.connection)
+            
             # Instalar reglas proactivas en el switch en cuanto se conecte
             if hasattr(core, 'firewall_rules'):
                 install_rules_on_connection(event.connection, core.firewall_rules)

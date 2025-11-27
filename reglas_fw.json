@@ -22,28 +22,12 @@
     "action": "deny",
     "src_ip": "10.0.0.1",
     "dst_ip": "10.0.0.4",
-    "protocol": "tcp",
-    "priority":  800
-  },
-  {
-    "action": "deny",
-    "src_ip": "10.0.0.1",
-    "dst_ip": "10.0.0.4",
-    "protocol": "udp",
     "priority":  800
   },
   {
     "action": "deny",
     "src_ip": "10.0.0.4",
     "dst_ip": "10.0.0.1",
-    "protocol": "tcp",
-    "priority":  800
-  },
-  {
-    "action": "deny",
-    "src_ip": "10.0.0.4",
-    "dst_ip": "10.0.0.1",
-    "protocol": "udp",
     "priority":  800
   }
 ]
